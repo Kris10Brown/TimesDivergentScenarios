@@ -1,0 +1,18 @@
+
+Instructions for others to use the pathways:
+1. Download the 4 files and save to /VEDA/VEDA_models/EPAUS9rT_v18.1.5/SuppXLS
+2. Open VedaFE, open Navigator tab, refresh, select the 4 scenarios, sync
+3. Open Run manager, define new lists with the new pathways at the bottom
+4. Create a cast with that list. 
+
+
+The MARKAL Calculations is from the original calculation of the discount rates. It may be useful in updating scenario assumptions for the future, but it not precisely calibrated for TIMES.
+
+Because the demand updates are multiplicative, it is important that CONS, ISUS, and MUDL are uploaded and synced in order as they are dependant on each other. GOOW has demands equal to base. CONS multiplies demands by base, ISUS multiplies demands by CONS so the multiplier uploaded is not he multiplier from base, MUDL multiplies  compared to CONS and ISUS becasue ISUS doesn't change all values. 
+
+To get ISUS values (when not *1) type *(isus/cons)--if ever update in future
+
+For MUDL you need 2 scenarios: MUDL_DMD is a file with all of the demand tables from base copied into it wtih the table tags replaced by  ~TFM_UPD as they are now update files not original definitions. You need this MUDL_DMD file to appear alphabetically before the file that actually has the MUDL changes, here called MUDL_pt2. To update the scenarios for a new version, recopy all (or any changed) demand values and update the table tags in the MUDL_DMD file. This should resolve issues where MUDL didn't have the right demand values. The update multipliers weren't really designed to be used with 4 separate cases like this I think.
+NOPE!!!! THIS DIDN'T WORK. The MUDL_DMD scenario did nothing so now those demands all wrong. 
+
+If using the pathways in combination with additional scenarios, be careful. If you add any additional scenarios, especially if they include changes to demands, go back and check that all demands are as expected, or change the values.

@@ -1,0 +1,491 @@
+---
+title: "Times Quad Plots"
+author: "K Brown (kristen.brown2@utsa.edu)"
+output:
+  pdf_document: default
+  html_document: default
+---
+This code can be used as a quick post processor for runs using the four divergent scenarios. For more detail on the inception and implementation of the scenarios see:
+
+J Gamas, Dodder, Loughlin &  Gage (2015) Role of future scenarios in understanding deep uncertainty in long-term air quality management, Journal of the Air & Waste Management Association, 65:11, 1327-1340, DOI: 10.1080/10962247.2015.1084783
+
+KE Brown,  Hottle, Bandyopadhyay, Babaee,  Dodder,  Kaplan,  Lenox,  Loughlin. (2018) Evolution of the United States Energy System and Related Emissions under Varying Social and Technological Development Paradigms: Plausible Scenarios for Use in Robust Decision Making. Environmental Science & Technology 52:14, pages 8027-8038
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(stringr)
+library(ggplot2)
+library(dplyr)
+library(ggrepel)
+library(here)
+```
+
+```{r theme}
+theme_times <- function(base_size=14, base_family=""){
+  theme_minimal() %+replace%
+    theme(strip.background=element_rect("azure"), #facet label background
+        axis.text.x=element_text(angle=60, size=12 ),
+        legend.text=element_text(size=12),
+        legend.title=element_text(size=14),
+        legend.title.align=0.2,
+        aspect.ratio = 0.8,
+        strip.text=element_text(size=12),
+        plot.background=element_rect(fill="transparent", linetype="blank")
+        )
+}
+
+```
+
+# Usage guide
+
+Import the results from each pathway. Here you'll need to add the location of the *.VD output files from your TIMES runs. This code is set up assuming that you have run the standard baseline and one of each of the other four cases. This could be run twice to produce output for each baseline and then each scenario under a tested policy or technology. 
+
+```{r load}
+#Location and name of TIMES *.VD files
+FindFile<-here()  #If your files are not stored in your current working directory, you'll need to point to them
+
+BAUFile <-  "Base_2704.vd";
+ConsFile <- "CONS_2704.vd"
+GoowFile <- "GOOW_2704.vd"
+IsusFile <- "ISUS_2704.vd"   
+MudlFile <- "MUDL_2704.vd"
+
+headers<-c("Attribute","Commodity","Fuel","Period","Region","Vintage",  #renamed process to fuel
+           "TimeSlice","UserConstraint","Value")
+BAU<- read.delim(file=paste(FindFile, BAUFile,sep="/"), 
+                      header=FALSE, sep=",",quote="\"", skip=12)
+colnames(BAU)<-headers
+cons<- read.delim(file=paste(FindFile, ConsFile,sep="/"), 
+                      header=FALSE, sep=",",quote="\"", skip=12)
+colnames(cons)<-headers
+goow<- read.delim(file=paste(FindFile, GoowFile,sep="/"), 
+                      header=FALSE, sep=",",quote="\"", skip=12)
+colnames(goow)<-headers
+isus<- read.delim(file=paste(FindFile, IsusFile,sep="/"), 
+                      header=FALSE, sep=",",quote="\"", skip=12)
+colnames(isus)<-headers
+mudl<- read.delim(file=paste(FindFile, MudlFile,sep="/"), 
+                      header=FALSE, sep=",",quote="\"", skip=12)
+colnames(mudl)<-headers
+
+```
+
+
+```{r ELC, message=FALSE}
+consELC <- filter(cons, Attribute== "VAR_FOut" & Commodity == "ELC")
+isusELC <- filter(isus, Attribute == "VAR_FOut"& Commodity == "ELC")
+goowELC <- filter(goow, Attribute== "VAR_FOut" & Commodity == "ELC")
+mudlELC <- filter(mudl, Attribute== "VAR_FOut" & Commodity == "ELC")
+BAUELC <- filter(BAU, Attribute == "VAR_FOut"& Commodity == "ELC")
+
+for(i in 1:5){
+  if(i == 1) {
+    this <- BAUELC
+  } else if(i == 2){ 
+      this <- consELC
+  } else if(i == 3){
+        this <- isusELC
+  } else if(i == 4){
+    this <- goowELC
+  } else 
+    this <- mudlELC
+  
+this$Fuel <- str_replace_all(this$Fuel,"SEELCBIGCC|^SEELCB.*|^SEBSTM.*|^EBIO.*|ECHPBIO|EETHB15","Biomass")
+this$Fuel <- str_replace_all(this$Fuel,"^ECOAL.*|^ECHPCOAL.*|^ECSTMR.*|^SEC(IGCC|ST).*","Coal") 
+this$Fuel <- str_replace_all(this$Fuel,"^EDSL.*|^SEELCDSL.*|^ECHPOIL.*|^ERFL.*|^SEELCRF.*","Oil") 
+this$Fuel <- str_replace_all(this$Fuel, "^ENGA+CT.*|^ENGA+C.*|^SEELCNGT.*|^ENGASTM.*|^ECHPNGA.*|^SEELCNGC.*|^SEELCNGS.*|^SENGAC.*","Nat. Gas")
+#this$Fuel <- str_replace_all(this$Fuel,"^EXP.*","TRADE") #get these out of the way 
+this$Fuel <- str_replace_all(this$Fuel,"^SELF.*|^SEELCWTE.*|^ELFG.*|^EMSW.*|Biomass","Waste+Bio")
+this$Fuel <- str_replace_all(this$Fuel, "^EURNAL.*", "Nuclear")
+this$Fuel <- str_replace_all(this$Fuel, "^EHYD.*", "Hydro")
+#this$Fuel <- str_replace_all(this$Fuel, "^EWND.*OF", "Offshore Wind")
+this$Fuel <- str_replace_all(this$Fuel, "^EWND.*", "Wind")
+this$Fuel <- str_replace_all(this$Fuel, "^ESOL.*", "Solar")
+#this$Fuel <- str_replace_all(this$Fuel, "^E.*", "Other")
+this$Fuel <- str_replace_all(this$Fuel, "Trd_.*", "trade")
+this <- filter(this, Fuel != "trade")
+  
+if(i == 1) {
+    BAUELC <- this
+  } else if(i == 2){ 
+      consELC <- this
+  } else if(i == 3){
+        isusELC <- this
+  } else if(i == 4){
+    goowELC <- this
+  } else 
+    mudlELC <- this
+} #endfor
+
+consELC$Attribute <- "Low Tech, Eco-Friendly"#"CONS"
+isusELC$Attribute <- "High Tech, Eco-Friendly"#"ISUS"
+goowELC$Attribute <-  "High Tech, US 1st" #"GOOW"
+mudlELC$Attribute <-  "Low Tech, High Style" #"MUDL"
+BAUELC$Attribute <- "Status Quo"#"BAU"
+
+techLevel <- rep(c("Low Tech", "High Tech","High Tech", "Low Tech", "Status Quo"),
+                 times=c(length(consELC$Attribute),length(isusELC$Attribute),length(goowELC$Attribute),
+                        length(mudlELC$Attribute),length(BAUELC$Attribute)))
+ecoLevel <- rep(c("Eco-Friendly", "Eco-Friendly", "Other Priorities"),
+                 times=c(length(consELC$Attribute),length(isusELC$Attribute),length(goowELC$Attribute)+
+                        length(mudlELC$Attribute)+length(BAUELC$Attribute)))
+
+Elc <- rbind(consELC, isusELC, goowELC, mudlELC, BAUELC)
+Elc$Period <- factor(x=Elc$Period);#, levels = "2010" "2011" "2015" "2020" "2025" "2030" "2035" "2040" "2045" "2050")
+
+Elc <- cbind(Elc, techLevel, ecoLevel)
+
+ElcSum <- Elc %>%
+  group_by(Fuel, Attribute, Period, techLevel, ecoLevel) %>%
+  filter(as.numeric(Period)>3 ) %>%
+  summarize("Total" = sum(Value)*278/1000000)  # 1 PJ = 278 GWh
+ElcSum$Fuel <- ordered(ElcSum$Fuel, levels=c("Wind", "Solar", "Nat. Gas", "Coal","Waste+Bio","Hydro","Oil","Nuclear" ))
+
+ELCplot2 <- ggplot(data=ElcSum, mapping = aes(x=Period, y=Total, fill= Fuel))
+
+ELCplot2 + geom_col(colour = "black") + facet_grid(ecoLevel~techLevel)+
+  scale_fill_manual(values=c( "#00CCFF", "yellow",  "purple", "grey","green","blue","#FFFFFF",  "orange"))+ 
+  theme_times() + ylab("Million GWh electricity generated")+xlab("Year") 
+```
+
+
+```{r LDV, message=FALSE}
+#LDV
+consTRN <- filter(cons, Attribute== "VAR_FOut" & Commodity == "TL")
+isusTRN <- filter(isus, Attribute == "VAR_FOut" & Commodity == "TL")
+BAUTRN <- filter(BAU, Attribute == "VAR_FOut" & Commodity == "TL")
+goowTRN <- filter(goow, Attribute == "VAR_FOut" & Commodity == "TL")
+mudlTRN <- filter(mudl, Attribute == "VAR_FOut" & Commodity == "TL")
+
+for(i in 1:5){
+  if(i == 1) {
+    this <- BAUTRN
+  } else if(i == 2){ 
+      this <- consTRN
+  } else if(i == 3){
+      this <- isusTRN
+  } else if(i == 4){
+    this <- goowTRN
+  } else 
+    this <- mudlTRN
+
+this$Fuel <- str_replace_all(this$Fuel, "^TL.*CONV.*|^TL.*GSL", "Gas")
+this$Fuel <- str_replace_all(this$Fuel, "^TL.*DSL", "Diesel")
+this$Fuel <- str_replace_all(this$Fuel, "^TL.*CNG|^TL.*LPG","Other")
+this$Fuel <- str_replace_all(this$Fuel, "^TL.*ELC", "Electric")
+this$Fuel <- str_replace_all(this$Fuel, "^TL.*ETH.*|^TL.*E85.*", "Ethanol")
+#this$Fuel <- str_replace_all(this$Fuel, "TL.*HEV", "Hybrid")
+#this$Fuel <- str_replace_all(this$Fuel, "TL.*P10E", "Plug-in Eth")
+#this$Fuel <- str_replace_all(this$Fuel, "TL.*P10G|TL.*PHVG", "Plug-in Gas")
+this$Fuel <- str_replace_all(this$Fuel, "TL.*HEV|TL.*P10E|TL.*P10G|TL.*PHVG", "Hybrid") #hybrid = elc + some liquid
+
+ if(i == 1) {
+    BAULDV <- this
+  } else if(i == 2){ 
+      consLDV <- this
+  } else if(i == 3){
+        isusLDV <- this
+  } else if(i == 4){
+    goowLDV <- this
+  } else 
+    mudlLDV <- this
+
+                              } #endfor
+
+consLDV$Attribute <- "Low Tech, Eco-Friendly"#"CONS"
+isusLDV$Attribute <- "High Tech, Eco-Friendly"#"ISUS"
+goowLDV$Attribute <-  "High Tech, US 1st" #"GOOW"
+mudlLDV$Attribute <-  "Low Tech, High Style" #"MUDL"
+BAULDV$Attribute <- "Status Quo"#"BAU"
+
+
+LDV <- rbind(consLDV, isusLDV, goowLDV, mudlLDV, BAULDV)
+
+techLevel <- rep(c("Low Tech", "High Tech","High Tech", "Low Tech", "Status Quo"),
+                 times=c(length(consLDV$Attribute),length(isusLDV$Attribute),length(goowLDV$Attribute),
+                        length(mudlLDV$Attribute),length(BAULDV$Attribute)))
+ecoLevel <- rep(c("Eco-Friendly", "Eco-Friendly", "Other Priorities"),
+                 times=c(length(consLDV$Attribute),length(isusLDV$Attribute),length(goowLDV$Attribute)+
+                        length(mudlLDV$Attribute)+length(BAULDV$Attribute)))
+LDV <- cbind(LDV, techLevel, ecoLevel)
+LDV$Period <- factor(x=LDV$Period);#, levels = "2010" "2011" "2015" "2020" "2025" "2030" "2035" "2040" "2045" "2050")
+LDV$Fuel <- factor(LDV$Fuel,levels=c("Diesel","Electric","Hybrid","Gas","Ethanol","Other"));
+                   
+
+
+LDVsum <- LDV %>%
+  group_by(Fuel, techLevel, ecoLevel, Period) %>%
+  filter(as.numeric(Period)>3 ) %>%
+#  mutate()%>%
+  summarize("Total" = sum(Value))  
+
+LDVsum$Fuel <- ordered(LDVsum$Fuel, levels=c("Electric","Other", "Ethanol","Hybrid", "Diesel","Gas"))
+
+LDVplot2 <- ggplot(data=LDVsum, mapping = aes(x=Period, y= Total, fill = Fuel))
+LDVplot2 + geom_col(colour="black") + facet_grid(ecoLevel~techLevel) +
+  scale_fill_manual(values=c("yellow","purple","#003300","blue","brown","grey"))+
+   theme_times() + ylab("Billion VMT")+xlab("Year")
+
+```
+
+
+
+
+## Emission Plots
+```{r emis, message=FALSE}
+
+#EmisList <- "BC$|CO$|NH3$|NOX$|OC$|PM10$|PM25$|SO2$|VOC$"
+#LongList <- unique(cons$Commodity[grepl(EmisList, cons$Commodity)])
+
+EmisList <- c("COMBC", "COMCO", "COMNOX", "COMOC", "COMPM10", "COMPM25", "COMSO2", "COMVOC", 
+              "INDBC", "INDCO", "INDNOX", "INDOC", "INDPM10", "INDPM25", "INDSO2", "INDVOC", 
+              "RESBC", "RESCO", "RESNOX", "RESOC", "RESPM10", "RESPM25", "RESSO2", "RESVOC", 
+              "ELCBC", "ELCCO", "ELCNOX", "ELCOC", "ELCPM10", "ELCPM25", "ELCSO2", "ELCVOC", "ELCNH3", 
+              "TRNBC", "TRNCO", "TRNNOX", "TRNOC", "TRNPM10", "TRNPM25", "TRNSO2", "TRNVOC", "TRNNH3",
+              "RSSBC", "RSSCO", "RSSNOX", "RSSOC", "RSSPM10", "RSSPM25", "RSSSO2", "RSSVOC", 
+              "REFBC", "REFCO", "REFNOX", "REFOC", "REFPM10", "REFPM25", "REFSO2", "REFVOC",
+              "ETHNOX", "ETHPM10", "ETHSO2", "BIOESO2")
+#Remove <- "CSTMBLCCO|CSTMBCCO|BSYOC|CSTMBCCO|CSTMSLCCO|CSTMLMCCO|CSTMSMCCO|CSTMLHCCO|ELCH2OC|ICO|INDELCCO"
+
+BAUEmis <- BAU %>%
+  filter(Attribute == "VAR_FOut") %>%
+  filter(Commodity %in% EmisList) %>%
+  group_by(Period, Commodity) %>%
+  summarize("Emissions" = sum(Value)) %>%
+  mutate("species" = Commodity)
+BAUEmis$Attribute <- "BAU"
+
+consEmis <- cons %>%
+  filter(Attribute == "VAR_FOut") %>%
+  filter(Commodity %in% EmisList) %>%
+  group_by(Period, Commodity) %>%
+  summarize("Emissions" = sum(Value)) %>%
+  mutate("species" = Commodity)
+consEmis$Attribute <- "CONS"
+
+isusEmis <- isus %>%
+  filter(Attribute == "VAR_FOut") %>%
+  filter(Commodity %in% EmisList) %>%
+  group_by(Period, Commodity) %>%
+  summarize("Emissions" = sum(Value)) %>%
+  mutate("species" = Commodity)
+isusEmis$Attribute <- "ISUS"
+
+goowEmis <- goow %>%
+  filter(Attribute == "VAR_FOut") %>%
+  filter(Commodity %in% EmisList) %>%
+  group_by(Period, Commodity) %>%
+  summarize("Emissions" = sum(Value)) %>%
+  mutate("species" = Commodity)
+goowEmis$Attribute <- "GOOW"
+
+mudlEmis <- mudl %>%
+  filter(Attribute == "VAR_FOut") %>%
+  filter(Commodity %in% EmisList) %>%
+  group_by(Period, Commodity) %>%
+  summarize("Emissions" = sum(Value)) %>%
+  mutate("species" = Commodity)
+mudlEmis$Attribute <- "MUDL"
+
+clen <- length(consEmis$Attribute);
+ilen <- length(isusEmis$Attribute);
+glen <- length(goowEmis$Attribute);
+mlen <- length(mudlEmis$Attribute);
+blen <- length(BAUEmis$Attribute);
+Emis <- rbind(BAUEmis, consEmis, isusEmis, mudlEmis, goowEmis)
+
+
+Emis$species[which(grepl(".BC$", Emis$Commodity))] <- "BC"
+Emis$species[which(grepl(".*CO$", Emis$Commodity))] <- "CO"
+Emis$species[which(grepl(".*NH3$", Emis$Commodity))] <- "NH3"
+Emis$species[which(grepl(".NOX$", Emis$Commodity))] <- "NOx"
+Emis$species[which(grepl("(?!VOC$).*OC$", Emis$Commodity, perl=TRUE))] <- "OC"
+Emis$species[which(grepl(".*PM10$", Emis$Commodity))] <- "PM10"
+Emis$species[which(grepl(".*PM25$", Emis$Commodity))] <- "PM25"
+Emis$species[which(grepl(".*SO2$", Emis$Commodity))] <- "SO2"
+Emis$species[which(grepl(".*VOC$", Emis$Commodity))] <- "VOC"
+
+#Emis$Commodity[which(grepl("^COM.*", Emis$Commodity))] <- "Commercial"
+#Emis$Commodity[which(grepl("^RES.*", Emis$Commodity))] <- "Residential"
+Emis$Commodity[which(grepl("^COM.*|^RES.*", Emis$Commodity))] <- "Buildings"
+Emis$Commodity[which(grepl("^ELC.*", Emis$Commodity))] <- "Electric"
+Emis$Commodity[which(grepl("^REF.*", Emis$Commodity))] <- "Refinery"
+Emis$Commodity[which(grepl("^RSS.*", Emis$Commodity))] <- "Extraction"
+Emis$Commodity[which(grepl("^IND.*", Emis$Commodity))] <- "Industry"
+#Emis$Commodity[which(grepl("^ETH.*", Emis$Commodity))] <- "Ethanol"
+Emis$Commodity[which(grepl("^ETH.*|^TRN.*", Emis$Commodity))] <- "Transportation"
+
+yearsInclude <- c(2010, 2020, 2030, 2040, 2050)
+yearsInclude <- c(2015, 2025, 2035, 2045)
+yearsInclude <- c(2020, 2030, 2040, 2050)
+
+
+techLvl <- rep(c("Status Quo", "Low Tech", "High Tech","Low Tech", "High Tech"),
+                 times=c(blen,clen, ilen, mlen, glen))
+ecoLvl <- rep(c("Other Priorities","Eco-Friendly", "Eco-Friendly", "Other Priorities"),
+                 times=c(blen,clen, ilen, mlen+ glen))
+Emis_Facet <- cbind(Emis, techLvl, ecoLvl)
+colnames(Emis_Facet) <-  c("Year", "Source", "Emissions","Species","Case","TechLevel","EcoLevel")
+
+Emis_tens <- filter(Emis_Facet, Year %in% yearsInclude)
+
+
+#BC <- filter(Emis, species == "BC")
+#CO <- filter(Emis, species == "CO")
+
+#EmisPlot <- ggplot(data=Emis, mapping = aes(x=Period, y=Emissions, fill = Commodity))
+#EmisPlot + geom_col() + facet_wrap(species~Attribute)
+
+# BCplot <- ggplot(data=filter(Emis, species=="BC"), mapping=aes(x=Period, y=Emissions, fill=Commodity))
+# BCplot + geom_col() + facet_wrap(~Attribute) + labs(title="BC")
+# COplot <- ggplot(data=filter(Emis, species=="CO"), mapping=aes(x=Period, y=Emissions, fill=Commodity))
+# COplot + geom_col() + facet_wrap(~Attribute) + labs(title="CO")
+# NH3plot <- ggplot(data=filter(Emis, species=="NH3"), mapping=aes(x=Period, y=Emissions, fill=Commodity))
+# NH3plot + geom_col() + facet_wrap(~Attribute) + labs(title="NH3")
+ NOXplot <- ggplot(data=filter(Emis_tens, Species=="NOx"), mapping=aes(x=Year, y=Emissions, fill=Source))
+ NOXplot +  geom_col(colour="black") + 
+   facet_grid(EcoLevel~TechLevel) +theme_times() + labs(title=expression(NO[x]))
+# OCplot <- ggplot(data=filter(Emis, species=="OC"), mapping=aes(x=Period, y=Emissions, fill=Commodity))
+# OCplot + geom_col() + facet_wrap(~Attribute) + labs(title="OC")
+# PM10plot <- ggplot(data=filter(Emis, species=="PM10"), mapping=aes(x=Period, y=Emissions, fill=Commodity))
+# PM10plot + geom_col() + facet_wrap(~Attribute) + labs(title="PM10")
+ PM25plot <- ggplot(data=filter(Emis_tens, Species=="PM25"), mapping=aes(x=Year, y=Emissions, fill=Source))
+ PM25plot + geom_col(colour="black") + 
+   facet_grid(EcoLevel~TechLevel) + labs(title=expression(PM[2.5])) + theme_times()
+ SO2plot <- ggplot(data=filter(Emis_tens, Species=="SO2"), mapping=aes(x=Year, y=Emissions, fill=Source))
+ SO2plot + geom_col(colour="black") + 
+   facet_grid(EcoLevel~TechLevel) + labs(title=expression(SO[2])) + theme_times()
+# SO2plot + geom_col() + facet_wrap(~Attribute) + labs(title="SO2")
+# VOCplot <- ggplot(data=filter(Emis, species=="VOC"), mapping=aes(x=Period, y=Emissions, fill=Commodity))
+# VOCplot + geom_col() + facet_wrap(~Attribute) + labs(title="VOC")
+
+Emis <- filter(Emis, Commodity != "BIOESO2")
+Future <- filter(Emis, Period %in% c(2045)) 
+Current <- Emis %>%
+  filter(Period %in% c(2020)) %>%
+  filter(Attribute == "BAU") 
+Current$Attribute <-  "Historic"
+
+BridgeEmis <- rbind(Current, Future)
+colnames(BridgeEmis) <-  c("Year", "Source", "Emissions","Species","Case");
+BridgeEmis$Case <- ordered(BridgeEmis$Case, levels = c("Historic","BAU","CONS","GOOW","MUDL","ISUS") )
+BridgeEmis$Source <- ordered(BridgeEmis$Source, levels = c("Transportation","Electric","Refinery","Extraction","Industry","Buildings"))
+
+Plot6 <- ggplot(data=BridgeEmis, mapping = aes(x=Case, y=Emissions, fill = Source))
+Plot6 + geom_col(colour="black") +facet_wrap(~Species, scales = "free_y") + 
+    scale_fill_brewer(palette = "Set1")+ 
+  theme_times() + labs(x = "", y = "kilotons", title = "Emissions across Scenarios")
+
+
+
+```
+
+
+
+## Electricity Use
+
+```{r elc use, message=FALSE}
+
+consELCuse <- filter(cons, Attribute == "VAR_FIn" & Commodity == "ELC")
+BAUELCuse <- filter(BAU, Attribute == "VAR_FIn" & Commodity == "ELC") 
+isusELCuse <- filter(isus, Attribute == "VAR_FIn" & Commodity == "ELC") 
+goowELCuse <- filter(goow, Attribute == "VAR_FIn" & Commodity == "ELC") 
+mudlELCuse <- filter(mudl, Attribute == "VAR_FIn" & Commodity == "ELC") 
+
+for(i in 1:5){
+  if(i == 1) {
+    this <- BAUELCuse
+  } else if(i == 2){ 
+      this <- consELCuse
+  } else if(i == 3){
+        this <- isusELCuse
+  } else if(i == 4){
+    this <- goowELCuse
+  } else 
+    this <- mudlELCuse
+  
+this$Fuel <- str_replace_all(this$Fuel,"^R.*","Residential")
+this$Fuel <- str_replace_all(this$Fuel,"^I.*","Industrial") 
+this$Fuel <- str_replace_all(this$Fuel,"^C.*","Commercial") 
+this$Fuel <- str_replace_all(this$Fuel, "^T.*","Transportation")
+this$Fuel <- str_replace_all(this$Fuel, "SCTRNELC", "Transportation") #collector tech
+
+  
+if(i == 1) {
+    BAUELCuse <- this
+  } else if(i == 2){ 
+      consELCuse <- this
+  } else if(i == 3){
+        isusELCuse <- this
+  } else if(i == 4){
+    goowELCuse <- this
+  } else 
+    mudlELCuse <- this
+} #endfor
+
+
+consELCuse$Attribute <- "CONS"
+isusELCuse$Attribute <- "ISUS"
+goowELCuse$Attribute <- "GOOW"
+mudlELCuse$Attribute <- "MUDL"
+BAUELCuse$Attribute <- "BAU"
+
+Elcuse <- rbind(consELCuse, isusELCuse, goowELCuse, mudlELCuse, BAUELCuse)
+
+
+ElcUseSum <- Elcuse %>%
+  filter(Fuel != "EHYDREVR") %>%
+  group_by(Fuel, Attribute, Period) %>%
+  summarize("Total" = sum(Value)) 
+#ELCline <- ggplot(data = ElcSum, mapping = aes(x=Period, y=Total, color = Fuel))
+#ELCline + geom_line(aes(group=Fuel)) + facet_wrap(~Attribute)
+
+ELCuseplot <- ggplot(data=ElcUseSum, mapping = aes(x=Period, y=Total, fill= Fuel))
+ELCuseplot + geom_col(colour = "black") + facet_wrap(~Attribute) + theme_times() +
+  labs(fill = "End Use",title = "Electricity Demand")
+
+ELCuseline <- ggplot(data = ElcUseSum, mapping = aes(x=Period, y=Total, color = Fuel))
+ELCuseline + geom_line(aes(group=Fuel)) + facet_wrap(~Attribute)+
+  geom_text_repel(data=subset(ElcUseSum, Period==2045 & Fuel == "Commercial"), aes(label = Fuel)) + 
+  geom_text_repel(data=subset(ElcUseSum, Period==2025 & Fuel == "Residential"), aes(label = Fuel)) + 
+  geom_text_repel(data=subset(ElcUseSum, Period==2045 & Fuel == "Industrial"), aes(label = Fuel)) + 
+  geom_text_repel(data=subset(ElcUseSum, Period==2015 & Fuel =="Transportation"), aes(label = Fuel)) + 
+   theme_times()+ labs(y = "",color = "End User")+
+   theme(axis.text.x=element_text(size = 11))
+
+```
+
+
+## Debugging
+Check for use of dummy fuels--this indicates you need to debug something or you may have overconstrained your system
+Marginal activity of dummy fuels means you're hitting a constraint.
+```{r dummys}
+
+#consDummys <- grep("ZZ", cons)   #Takes way too long
+mudlDummys <- rbind(mudl[grep("ZZ", mudl$Fuel),], mudl[grep("ZZ", mudl$Commodity),])
+goowDummys <- rbind(goow[grep("ZZ", goow$Fuel),], goow[grep("ZZ", goow$Commodity),])
+isusDummys <- rbind(isus[grep("ZZ", isus$Fuel),], isus[grep("ZZ", isus$Commodity),])
+consDummys <- rbind(cons[grep("ZZ", cons$Fuel),], cons[grep("ZZ", cons$Commodity),])
+BAUDummys <- rbind(BAU[grep("ZZ", BAU$Fuel),], BAU[grep("ZZ", BAU$Commodity),])
+
+unique(mudlDummys$Attribute)
+unique(goowDummys$Attribute)
+unique(isusDummys$Attribute)
+unique(consDummys$Attribute)
+unique(BAUDummys$Attribute)
+
+unique(mudlDummys$Commodity)
+unique(goowDummys$Commodity)
+unique(isusDummys$Commodity)
+unique(consDummys$Commodity)
+unique(BAUDummys$Commodity)
+
+unique(mudlDummys$Fuel)
+unique(goowDummys$Fuel)
+unique(isusDummys$Fuel)
+unique(consDummys$Fuel)
+unique(BAUDummys$Fuel)
+
+#Marginal activity of 2 Fuel for all: ZZBSYOPRO, ZZWSYOPRO
+
+```
